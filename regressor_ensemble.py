@@ -51,12 +51,19 @@ from sklearn.feature_selection import SelectPercentile, f_regression
 
 #%%
 # define the chunks and the features:
-minutes = pd.read_csv("in_a_minute.csv")[-10000:]
+minutes = pd.read_csv("in_a_minute_ta.csv")[-10000:]
 print('There are {} minutes in the file.'.format(len(minutes)))
 cols = list(minutes.columns.values)
 minutes.index = minutes.Timestamp
 cols.remove('Timestamp')
-
+cols.remove('open')
+cols.remove('close')
+cols.remove('high')
+cols.remove('low')
+cols.remove('Volume')
+cols.remove('Price')
+cols.remove('Amount')
+minutes.drop('Unnamed: 0')
 X = minutes[cols]
 y = minutes['Price'].shift(periods=60)
 idx = minutes['Timestamp']
@@ -67,11 +74,11 @@ y=y.fillna(0)
 
 Xtrain,Xval,ytrain,yval = model_selection.train_test_split(X,y,test_size=0.4)
 
-
-scaler = preprocessing.StandardScaler().fit(Xtrain)
-Xtrain_norm = scaler.transform(Xtrain)
-Xval_norm = scaler.transform(Xval)
-X_norm = scaler.transform(X)
+#
+#scaler = preprocessing.StandardScaler().fit(Xtrain)
+#Xtrain_norm = scaler.transform(Xtrain)
+#Xval_norm = scaler.transform(Xval)
+#X_norm = scaler.transform(X)
 
 prr
 classifiers = 'DTC RF REG KNN SVM SVMlinear BRR HR XGB ADA CAT GPR'.split(sep=' ')
