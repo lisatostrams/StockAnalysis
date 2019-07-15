@@ -1,0 +1,11 @@
+
+.DS_Store
+*.zip
+bitcoin-historical-data/.DS_Store
+*.csv
+*.csv
+bitcoin-historical-data/in_a_minute.csv
+bitcoin-historical-data.zip
+*.tfevents
+*.tsv
+*.csv
