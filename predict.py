@@ -24,7 +24,7 @@ df.Timestamp = pd.to_datetime(df.Timestamp)
 df.index = df.Timestamp
 
 #%%
-def backtest(prices, actions, start_capital = 10., fee = 0.075 / 100, verbose=False):
+def backtest(prices, actions, start_capital = 10., fee = 0.3 / 100, verbose=False):
     capital = start_capital
     position = 0
     bet = start_capital
@@ -51,7 +51,7 @@ def backtest(prices, actions, start_capital = 10., fee = 0.075 / 100, verbose=Fa
     #print(portfolio)
         
 #%%
-def tradepoints(prices, lookahead=22, fee_pct=0.075 / 100, margin_pct = .5 / 100, verbose=False):
+def tradepoints(prices, lookahead=22, fee_pct=0.075 / 100, margin_pct = .3 / 100, verbose=False):
     indices = prices.apply(lambda x: 0)
     up = False
     index = 0
@@ -91,11 +91,45 @@ def tradepoints(prices, lookahead=22, fee_pct=0.075 / 100, margin_pct = .5 / 100
 #%%
 
 fwd_len = 30
-cut = 500 + fwd_len
-prices = df['close'][-cut:-fwd_len]
+cut = 100000
+data = df[-cut:]
+prices = data['close']
 
 labels = tradepoints(prices, lookahead=22)
+#%%
 
+x = data.iloc[:, 1:]
+y = labels
+
+x, x_test, y, y_test = train_test_split(x, y, test_size=0.2, random_state=42, stratify=y)
+
+#%%
+
+train_data = lightgbm.Dataset(x, label=y)
+test_data = lightgbm.Dataset(x_test, label=y_test)
+
+parameters = {
+    'application': 'binary',
+    'objective': 'binary',
+    'metric': 'auc',
+    'is_unbalance': 'true',
+    'boosting': 'gbdt',
+    'num_leaves': 31,
+    'feature_fraction': 0.5,
+    'bagging_fraction': 0.5,
+    'bagging_freq': 20,
+    'learning_rate': 0.05,
+    'verbose': 0
+}
+
+model = lightgbm.train(parameters,
+                       train_data,
+                       valid_sets=test_data,
+                       num_boost_round=5000,
+                       early_stopping_rounds=100)
+#
+# Create a submission
+#%%
 x = labels.index
 y1 = labels.values
 y2 = prices
