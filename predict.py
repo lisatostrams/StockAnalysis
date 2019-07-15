@@ -22,6 +22,8 @@ df.Timestamp = pd.to_datetime(df.Timestamp)
 
 # Resampling to daily frequency
 df.index = df.Timestamp
+df.drop('Unnamed: 0',axis=1,inplace=True)
+df.drop('Timestamp',axis=1,inplace=True)
 
 #%%
 def backtest(prices, actions, start_capital = 10., fee = 0.075 / 100, verbose=False):
@@ -48,7 +50,7 @@ def backtest(prices, actions, start_capital = 10., fee = 0.075 / 100, verbose=Fa
     portfolio = position + capital
     earning_pct = round(((float(portfolio) / start_capital ) -1 ) *100, 2)
     print("Earnings over {} points: {} percent".format(len(prices), earning_pct))
-    #print(portfolio)
+    print(portfolio)
         
 #%%
 def tradepoints(prices, lookahead=22, fee_pct=0.075 / 100, margin_pct = .5 / 100, verbose=False):
@@ -89,9 +91,11 @@ def tradepoints(prices, lookahead=22, fee_pct=0.075 / 100, margin_pct = .5 / 100
     return indices
 
 #%%
-
+df['change']=0
 fwd_len = 30
-cut = 500 + fwd_len
+#idx = np.arange(len(df),5484,-500)
+#for index in idx:
+cut = 500000 + fwd_len
 prices = df['close'][-cut:-fwd_len]
 
 labels = tradepoints(prices, lookahead=22)
@@ -99,6 +103,7 @@ labels = tradepoints(prices, lookahead=22)
 x = labels.index
 y1 = labels.values
 y2 = prices
+df.at[x,'change'] = labels
 
 backtest(y2, y1)
 
