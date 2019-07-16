@@ -28,18 +28,20 @@ df.drop('Unnamed: 0',axis=1,inplace=True)
 df.drop('Timestamp',axis=1,inplace=True)
 
 #%%
-def backtest(prices, actions, start_capital = 10., fee = 0.3 / 100, verbose=False):
+def backtest(prices, actions, start_capital = 100., fee = 0.075 / 100, verbose=False):
     capital = start_capital
     position = 0
     bet = start_capital
     for i, price in enumerate(prices):
+        if not price:
+            continue
         action = actions[i]
-        if action == 1 and capital > 0:
+        if action == 2 and capital > 0:
             if verbose:
                 print("buy")
             position += bet - (bet * fee)
             capital -= bet
-        elif action == -1 and position > 0:
+        elif action == 1 and position > 0:
             if verbose:
                 print("sell")
             capital += bet - (bet * fee)
@@ -55,7 +57,7 @@ def backtest(prices, actions, start_capital = 10., fee = 0.3 / 100, verbose=Fals
     print(portfolio)
         
 #%%
-def tradepoints(prices, lookahead=22, fee_pct=0.075 / 100, margin_pct = .3 / 100, verbose=False):
+def tradepoints(prices, lookahead=22, fee_pct=0.075 / 100, margin_pct = .03 / 100, verbose=False):
     indices = prices.apply(lambda x: 0)
     up = False
     index = 0
@@ -92,6 +94,12 @@ def tradepoints(prices, lookahead=22, fee_pct=0.075 / 100, margin_pct = .3 / 100
         index += 1
     return indices
 
+def non_shuffling_train_test_split(X, y, test_size=0.2):
+    i = int((1 - test_size) * X.shape[0]) + 1
+    X_train, X_test = np.split(X, [i])
+    y_train, y_test = np.split(y, [i])
+    return X_train, X_test, y_train, y_test
+
 #%%
 def predict(model, x):
     return model.predict(np.array(x).reshape((1,-1)))
@@ -109,24 +117,37 @@ plot_x = data.index
 #%%
 labels = tradepoints(prices, lookahead=22)
 #%%
+# label the data, backtest and prepare plot
+y1 = labels.values
+y2 = prices
+#df.at[x,'change'] = labels
+
+backtest(y2, y1)
+#%%
 
 x = data.values[:,2:]
 y = labels
 
-x, x_test, y, y_test = train_test_split(x, y, test_size=0.2, random_state=42, stratify=y)
+#x_train, x_test, y_train, y_test = non_shuffling_train_test_split(x, y, test_size=0.2)
+x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42, stratify=y)
 
-weight_ratio_sell = float(len(y[y == 0]))/float(len(y[y == 
+weight_ratio_sell = float(len(y_train[y_train == 0]))/float(len(y_train[y_train == 
 1]))
-weight_ratio_buy = float(len(y[y == 0]))/float(len(y[y == 
+weight_ratio_buy = float(len(y_train[y_train == 0]))/float(len(y_train[y_train == 
 2]))
     
-w_array = np.zeros(len(y))
-w_array[y==2] = weight_ratio_buy
-w_array[y==1] = weight_ratio_sell
-w_array[y==0] = 1
+w_train = np.zeros(len(y_train))
+w_train[y_train==2] = weight_ratio_buy
+w_train[y_train==1] = weight_ratio_sell
+w_train[y_train==0] = 1
+
+w_test = np.zeros(len(y_test))
+w_test[y_test==2] = weight_ratio_buy
+w_test[y_test==1] = weight_ratio_sell
+w_test[y_test==0] = 1
 #%%
-train_data = lightgbm.Dataset(x, label=y, weight=w_array)
-test_data = lightgbm.Dataset(x_test, label=y_test)
+train_data = lightgbm.Dataset(x_train, label=y_train, weight=w_train)
+test_data = lightgbm.Dataset(x_test, label=y_test, weight=w_test)
 
 parameters = {
     'application': 'multiclass',
@@ -137,7 +158,7 @@ parameters = {
     'num_leaves': 31,
     'feature_fraction': 0.5,
     'bagging_fraction': 0.5,
-    'bagging_freq': 20,
+    'bagging_freq': 2,
     'learning_rate': 0.01,
     'verbose': 0
 }
@@ -146,7 +167,7 @@ lgb_classifier = lightgbm.train(parameters,
                        train_data,
                        valid_sets=test_data,
                        num_boost_round=5000,
-                       early_stopping_rounds=20)
+                       early_stopping_rounds=100)
 
 #%%
 exgb_classifier = xgb.XGBClassifier( verbosity=2)
@@ -155,31 +176,22 @@ exgb_classifier = xgb.XGBClassifier( verbosity=2)
 exgb_classifier.fit(x,y,sample_weight=w_array)
 
 #%%
-# label the data, backtest and prepare plot
-y1 = labels.values
-y2 = prices
-df.at[x,'change'] = labels
-
-backtest(y2, y1)
-
-#%%
 # predict and plot
 y_pred = exgb_classifier.predict(data.values[:,2:])
 
 #%%
-y_pred = lgb_classifier.predict(data.values[:,2:])
+display = 300
+y_pred = lgb_classifier.predict(x_test[-display:])
 y_pred = np.array([np.argmax(x) for x in y_pred])
 
 
 #%%
-y2 = data['close']
+y2 = [x[0] for x in x_test[-display:]]
 y1 = y_pred
-
+plot_x = data.index[-display:]
 #%%
-backtest(data['close'], y_pred)
+backtest(y2, y_pred)
 #%%
-%matplotlib inline
-
 fig, ax1 = plt.subplots()
 
 color = 'tab:red'
