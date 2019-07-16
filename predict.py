@@ -10,12 +10,14 @@ import sys
 import numpy as np
 import pandas as pd
 import lightgbm
+import xgboost as xgb
+
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 
 
 #%%
-df = pd.read_csv('in_a_minute_ta.csv')
+df = pd.read_csv('/home/apeppels/StockAnalysis/in_a_minute_ta.csv')
 
 #%%
 df.Timestamp = pd.to_datetime(df.Timestamp)
@@ -76,7 +78,7 @@ def tradepoints(prices, lookahead=22, fee_pct=0.075 / 100, margin_pct = .3 / 100
                 if verbose:
                     print('sell')
                 up = False
-                indices[index] = -1
+                indices[index] = 1
         #looking for buypoint
         else:
             cheaper_in_future = [price > p for p in nextprices] 
@@ -86,60 +88,95 @@ def tradepoints(prices, lookahead=22, fee_pct=0.075 / 100, margin_pct = .3 / 100
                 if verbose:
                     print('buy')
                 up = True
-                indices[index] = 1
+                indices[index] = 2
         index += 1
     return indices
 
+#%%
+def predict(model, x):
+    return model.predict(np.array(x).reshape((1,-1)))
 #%%
 df['change']=0
 fwd_len = 30
 #idx = np.arange(len(df),5484,-500)
 #for index in idx:
 cut = 500000 + fwd_len
-prices = df['close'][-cut:-fwd_len]
 
+data = df[-cut:]
+prices = data['close']
+plot_x = data.index
+
+#%%
 labels = tradepoints(prices, lookahead=22)
 #%%
 
-x = data.iloc[:, 1:]
+x = data.values[:,2:]
 y = labels
 
 x, x_test, y, y_test = train_test_split(x, y, test_size=0.2, random_state=42, stratify=y)
 
+weight_ratio_sell = float(len(y[y == 0]))/float(len(y[y == 
+1]))
+weight_ratio_buy = float(len(y[y == 0]))/float(len(y[y == 
+2]))
+    
+w_array = np.zeros(len(y))
+w_array[y==2] = weight_ratio_buy
+w_array[y==1] = weight_ratio_sell
+w_array[y==0] = 1
 #%%
-
-train_data = lightgbm.Dataset(x, label=y)
+train_data = lightgbm.Dataset(x, label=y, weight=w_array)
 test_data = lightgbm.Dataset(x_test, label=y_test)
 
 parameters = {
-    'application': 'binary',
-    'objective': 'binary',
-    'metric': 'auc',
-    'is_unbalance': 'true',
+    'application': 'multiclass',
+    'objective': 'multiclass',
+    'num_classes': 3,
+    'metric': 'multi_logloss',
     'boosting': 'gbdt',
     'num_leaves': 31,
     'feature_fraction': 0.5,
     'bagging_fraction': 0.5,
     'bagging_freq': 20,
-    'learning_rate': 0.05,
+    'learning_rate': 0.01,
     'verbose': 0
 }
 
-model = lightgbm.train(parameters,
+lgb_classifier = lightgbm.train(parameters,
                        train_data,
                        valid_sets=test_data,
                        num_boost_round=5000,
-                       early_stopping_rounds=100)
-#
-# Create a submission
+                       early_stopping_rounds=20)
+
 #%%
-x = labels.index
+exgb_classifier = xgb.XGBClassifier( verbosity=2)
+
+#%%
+exgb_classifier.fit(x,y,sample_weight=w_array)
+
+#%%
+# label the data, backtest and prepare plot
 y1 = labels.values
 y2 = prices
 df.at[x,'change'] = labels
 
 backtest(y2, y1)
 
+#%%
+# predict and plot
+y_pred = exgb_classifier.predict(data.values[:,2:])
+
+#%%
+y_pred = lgb_classifier.predict(data.values[:,2:])
+y_pred = np.array([np.argmax(x) for x in y_pred])
+
+
+#%%
+y2 = data['close']
+y1 = y_pred
+
+#%%
+backtest(data['close'], y_pred)
 #%%
 %matplotlib inline
 
@@ -148,14 +185,14 @@ fig, ax1 = plt.subplots()
 color = 'tab:red'
 ax1.set_xlabel('time')
 ax1.set_ylabel('change', color=color)
-ax1.plot(x, y1, color=color)
+ax1.plot(plot_x, y1, color=color)
 ax1.tick_params(axis='y', labelcolor=color)
 
 ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
 
 color = 'tab:blue'
 ax2.set_ylabel('BTC_USD', color=color)  # we already handled the x-label with ax1
-ax2.plot(x, y2, color=color)
+ax2.plot(plot_x, y2, color=color)
 ax2.tick_params(axis='y', labelcolor=color)
 
 fig.tight_layout()  # otherwise the right y-label is slightly clipped
