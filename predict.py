@@ -57,7 +57,7 @@ def backtest(prices, actions, start_capital = 100., fee = 0.075 / 100, verbose=F
     print(portfolio)
         
 #%%
-def tradepoints(prices, lookahead=22, fee_pct=0.075 / 100, margin_pct = .03 / 100, verbose=False):
+def tradepoints(prices, lookahead=22, fee_pct=0.075 / 100, margin_pct = .0 / 100, verbose=False):
     indices = prices.apply(lambda x: 0)
     up = False
     index = 0
@@ -103,12 +103,50 @@ def non_shuffling_train_test_split(X, y, test_size=0.2):
 #%%
 def predict(model, x):
     return model.predict(np.array(x).reshape((1,-1)))
+
+#%%
+def ta_data_to_sequences(data, how_much, offset):
+    max_signal_searchback = 5000
+    columns_per_category = 500
+    resolution_offsets = {
+            'lo': 50000,
+            'mid': 5000,
+            'hi': 500
+            }
+
+    res = []
+    # how many rows do we want our matrix to have?
+    for i in range(how_much):
+        row = []
+        # for each category, step through the price/volume data
+        for resolution, timerange in resolution_offsets.items():
+            steps = timerange / columns_per_category
+            # for each data point, add it tot he feature vector
+            for ta_data in data[-how_far_back - timerange - offset :-offset -i: steps]:
+                row.append(ta_data['close'])
+                row.append(ta_data['Amount'])
+        res.append(row)
+        
+        # once we are done with the time series, append for each CDL
+        # signal the time ago it was last spotted
+        for signal in [key in data.keys() if 'CDL' in key]:
+            # if we do not encounter it, store -1
+            signal_offset = -1
+            # look backwards to see if we encounter the signal anywhere in our history
+            for i in range(max_signal_searchback):
+                if data[signal][-offset - i] != 0:
+                    # if we do, store offset i and look no further
+                    signal_offset = i
+                    break
+            row.append(signal_offset)
+        return res
+        
 #%%
 df['change']=0
 fwd_len = 30
 #idx = np.arange(len(df),5484,-500)
 #for index in idx:
-cut = 500000 + fwd_len
+cut = 300 + fwd_len
 
 data = df[-cut:]
 prices = data['close']
@@ -124,10 +162,12 @@ y2 = prices
 
 backtest(y2, y1)
 #%%
+val_split = 10000 
+x = data.values[:-val_split,2:]
+y = labels[:-val_split]
 
-x = data.values[:,2:]
-y = labels
-
+x_val = data.values[-val_split:,2:]
+y_val = labels[-val_split:]
 #x_train, x_test, y_train, y_test = non_shuffling_train_test_split(x, y, test_size=0.2)
 x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42, stratify=y)
 
@@ -158,8 +198,8 @@ parameters = {
     'num_leaves': 31,
     'feature_fraction': 0.5,
     'bagging_fraction': 0.5,
-    'bagging_freq': 2,
-    'learning_rate': 0.01,
+    'bagging_freq': 1,
+    'learning_rate': 0.1,
     'verbose': 0
 }
 
@@ -167,30 +207,31 @@ lgb_classifier = lightgbm.train(parameters,
                        train_data,
                        valid_sets=test_data,
                        num_boost_round=5000,
-                       early_stopping_rounds=100)
+                       early_stopping_rounds=20)
 
 #%%
 exgb_classifier = xgb.XGBClassifier( verbosity=2)
 
 #%%
-exgb_classifier.fit(x,y,sample_weight=w_array)
+exgb_classifier.fit(x_train,y_train,sample_weight=w_train)
 
 #%%
 # predict and plot
 y_pred = exgb_classifier.predict(data.values[:,2:])
 
 #%%
-display = 300
-y_pred = lgb_classifier.predict(x_test[-display:])
+display = 200
+y_pred = lgb_classifier.predict(data.values[-display:,2:])
 y_pred = np.array([np.argmax(x) for x in y_pred])
 
 
 #%%
-y2 = [x[0] for x in x_test[-display:]]
+y2 = data['close'][-display:]
 y1 = y_pred
+#y1 = y_val[-display:]
 plot_x = data.index[-display:]
 #%%
-backtest(y2, y_pred)
+backtest(y2, y1)
 #%%
 fig, ax1 = plt.subplots()
 
